@@ -50,7 +50,7 @@ desc() ->
     "`dialyzer_base_plt_apps` - a list of applications to include in the base "
     "PLT file**\n"
     "\n"
-    "*The applications in `dialyzer_base_plt_apps` and any `applications` and "
+    "*The applications in `dialyzer_base_plt_apps` are also added to the PLT.\n"
     "`included_applications` listed in their .app files will be added to the "
     "list.\n"
     "**The base PLT is a PLT containing the core OTP applications often "
@@ -146,12 +146,10 @@ get_plt_files([AppName | DepApps], Apps, PltApps, Files) ->
         true ->
             get_plt_files(DepApps, Apps, PltApps, Files);
         false ->
-            {DepApps2, Files2} = app_name_to_info(AppName),
-            ?DEBUG("~s dependencies: ~p", [AppName, DepApps2]),
+            Files2 = app_name_to_files(AppName),
             ?DEBUG("~s files: ~p", [AppName, Files2]),
-            DepApps3 = DepApps2 ++ DepApps,
             Files3 = Files2 ++ Files,
-            get_plt_files(DepApps3, Apps, [AppName | PltApps], Files3)
+            get_plt_files(DepApps, Apps, [AppName | PltApps], Files3)
     end.
 
 app_member(AppName, Apps) ->
@@ -162,13 +160,13 @@ app_member(AppName, Apps) ->
             false
     end.
 
-app_name_to_info(AppName) ->
+app_name_to_files(AppName) ->
     case app_name_to_ebin(AppName) of
         {error, _} ->
             ?CONSOLE("Unknown application ~s", [AppName]),
-            {[], []};
+            [];
         EbinDir ->
-            ebin_to_info(EbinDir, AppName)
+            ebin_to_files(EbinDir, AppName)
     end.
 
 app_name_to_ebin(AppName) ->
@@ -195,19 +193,16 @@ search_ebin(AppName) ->
             filename:dirname(AppFile)
     end.
 
-ebin_to_info(EbinDir, AppName) ->
+ebin_to_files(EbinDir, AppName) ->
     AppFile = filename:join(EbinDir, atom_to_list(AppName) ++ ".app"),
     ?DEBUG("Consulting app file ~p", [AppFile]),
     case file:consult(AppFile) of
         {ok, [{application, AppName, AppDetails}]} ->
-            DepApps = proplists:get_value(applications, AppDetails, []),
-            IncApps = proplists:get_value(included_applications, AppDetails,
-                                          []),
             Modules = proplists:get_value(modules, AppDetails, []),
             Files = modules_to_files(Modules, EbinDir),
-            {IncApps ++ DepApps, Files};
+            Files;
         {error, enoent} when AppName =:= erts ->
-            {[], ebin_files(EbinDir)};
+            ebin_files(EbinDir);
         _ ->
             Error = io_lib:format("Could not parse ~p", [AppFile]),
             throw({dialyzer_error, Error})
@@ -311,11 +306,7 @@ get_base_plt_files(State) ->
     app_names_to_files(BasePltApps).
 
 app_names_to_files(AppNames) ->
-    ToFiles = fun(AppName) ->
-                      {_, Files} = app_name_to_info(AppName),
-                      Files
-              end,
-    lists:flatmap(ToFiles, AppNames).
+    lists:flatmap(fun app_name_to_files/1, AppNames).
 
 update_base_plt(State, BasePlt, BaseFiles) ->
     ?INFO("Updating base plt...", []),
@@ -361,8 +352,7 @@ apps_to_files(Apps) ->
 
 app_to_files(App) ->
     AppName = ec_cnv:to_atom(rebar_app_info:name(App)),
-    {_, Files} = app_name_to_info(AppName),
-    Files.
+    app_name_to_files(AppName).
 
 run_dialyzer(State, Opts) ->
     %% dialyzer may return callgraph warnings when get_warnings is false
