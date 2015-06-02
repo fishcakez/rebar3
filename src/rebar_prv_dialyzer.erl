@@ -310,6 +310,7 @@ run_plt(State, Plt, Output, Analysis, Files) ->
     Opts = [{analysis_type, Analysis},
             {get_warnings, GetWarnings},
             {init_plt, Plt},
+            {output_plt, Plt},
             {from, byte_code},
             {files, Files}],
     run_dialyzer(State, Opts, Output).
